@@ -17,8 +17,9 @@ buildscript {
     }
     dependencies {
         classpath 'org.gebish:geb-gradle:0.10.0' // for the sauceLabs configuration
+        classpath 'com.saucelabs:saucerest:1.0.22'
+        classpath 'com.saucelabs:sauce_java_common:2.1.10'
         classpath 'com.github.double16:gradle-java-saucelabs-plugin:0.1-SNAPSHOT' // this plugin
-        classpath 'com.saucelabs.gradle:sauce-gradle-plugin:0.0.1' // for Sauce listener to update test pass/fail
         classpath "org.akhikhl.gretty:gretty:1.1.7" // for the web container
     }
 }

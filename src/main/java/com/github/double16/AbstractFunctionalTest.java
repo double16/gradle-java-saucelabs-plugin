@@ -100,7 +100,7 @@ public class AbstractFunctionalTest {
 
   @Before
   public void setUp() throws Exception {
-    reportDir = new File(new File(System.getProperty("proj.test.resultsDir", "build/reports/tests")), testName.getMethodName());
+    reportDir = new File(new File(System.getProperty("functionalTests.resultsDir", "build/reports/tests")), testName.getMethodName());
     reportDir.mkdirs();
 
     driver.get(baseUrl);

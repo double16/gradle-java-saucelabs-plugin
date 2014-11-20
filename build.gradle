@@ -7,7 +7,6 @@ buildscript {
         }
     }
     dependencies {
-        classpath group: 'com.saucelabs.gradle', name: 'sauce-gradle-plugin', version: '0.0.1'
         classpath 'org.gebish:geb-gradle:0.10.0'
     }
 }
@@ -26,8 +25,9 @@ repositories {
 dependencies {
     compile gradleApi()
     compile localGroovy()
-    compile 'com.saucelabs.gradle:sauce-gradle-plugin:0.0.1'
     compile 'org.gebish:geb-gradle:0.10.0'
+    compile 'com.saucelabs:saucerest:1.0.22'
+    compile 'com.saucelabs:sauce_java_common:2.1.10'
     compile 'org.seleniumhq.selenium:selenium-java:2.42.2'
     compile 'com.github.detro:phantomjsdriver:1.2.0'
 }

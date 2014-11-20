@@ -1,18 +1,28 @@
 package com.github.double16
 
-import com.saucelabs.gradle.SauceListener
+import com.saucelabs.common.Utils
+import com.saucelabs.saucerest.SauceREST
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.tasks.testing.Test
 import geb.gradle.cloud.BrowserSpec
+import org.gradle.api.tasks.testing.TestDescriptor
+import org.gradle.api.tasks.testing.TestListener
+import org.gradle.api.tasks.testing.TestOutputEvent
+import org.gradle.api.tasks.testing.TestOutputListener
+import org.gradle.api.tasks.testing.TestResult
+
+import java.util.regex.Matcher
+import java.util.regex.Pattern
 
 class JavaSauceLabsPlugin implements Plugin<Project> {
 
   void apply(Project project) {
     project.beforeEvaluate {
       project.buildscript.dependencies {
-        classpath 'com.saucelabs.gradle:sauce-gradle-plugin:0.0.1'
         classpath 'org.gebish:geb-gradle:0.10.0'
+        classpath 'com.saucelabs:saucerest:1.0.22'
+        classpath 'com.saucelabs:sauce_java_common:2.1.10'
       }
     }
 
@@ -31,6 +41,7 @@ class JavaSauceLabsPlugin implements Plugin<Project> {
       functionalTestCompile 'junit:junit:4.11'
       functionalTestCompile 'org.seleniumhq.selenium:selenium-java:2.42.2'
       functionalTestCompile 'com.github.detro:phantomjsdriver:1.2.0'
+      functionalTestCompile 'com.saucelabs:saucerest:1.0.22'
       functionalTestCompile 'com.saucelabs:sauce_java_common:2.1.10'
     }
 
@@ -42,23 +53,15 @@ class JavaSauceLabsPlugin implements Plugin<Project> {
       group "Functional Test"
     }
 
-    project.tasks.create(name: 'sauceListener') {
-      doFirst {
-        def account = project.extensions.sauceLabs.account
-        project.gradle.addListener(new SauceListener(account.username, account.accessKey))
-      }
-    }
-
     project.tasks.create(name: "phantomJsTest", type: Test) {
+      def reportDir = project.file("${project.buildDir}/test-results/phantomjs")
       group functionalTests.group()
       testClassesDir = project.sourceSets.functionalTest.output.classesDir
       classpath = project.sourceSets.functionalTest.runtimeClasspath
-      def reportDir = project.file("${project.buildDir}/test-results/phantomjs")
       reports.junitXml.destination = reportDir
       reports.html.destination = reportDir
       binResultsDir = reportDir
-      systemProperty 'proj.test.resultsDir', reportDir.getCanonicalPath()
-      dependsOn 'sauceListener'
+      systemProperty 'functionalTests.resultsDir', reportDir.getCanonicalPath()
       if (project.plugins.findPlugin('org.akhikhl.gretty')) {
         dependsOn 'appBeforeIntegrationTest'
         finalizedBy 'appAfterIntegrationTest'
@@ -69,16 +72,21 @@ class JavaSauceLabsPlugin implements Plugin<Project> {
     project.extensions.browsers.all { BrowserSpec browserSpec ->
       def reportDir = project.file("${project.buildDir}/test-results/${browserSpec.displayName}")
       def task = project.tasks.create(name: "${browserSpec.displayName}Test", type: Test) {
+        def account = project.extensions.sauceLabs.account
+        def sauceListener = new SauceListener(account.username, account.accessKey)
+        addTestListener(sauceListener)
+        addTestOutputListener(sauceListener)
+
         group functionalTests.group()
         testClassesDir = project.sourceSets.functionalTest.output.classesDir
         classpath = project.sourceSets.functionalTest.runtimeClasspath
         reports.junitXml.destination = reportDir
         reports.html.destination = reportDir
         binResultsDir = reportDir
-        systemProperty 'proj.test.resultsDir', reportDir.getCanonicalPath()
+        systemProperty 'functionalTests.resultsDir', reportDir.getCanonicalPath()
         systemProperty 'saucelabs.job-name', project.name
         systemProperty 'saucelabs.build', project.version
-        dependsOn 'sauceListener', 'openSauceTunnelInBackground'
+        dependsOn 'openSauceTunnelInBackground'
         finalizedBy 'closeSauceTunnel'
         if (project.plugins.findPlugin('org.akhikhl.gretty')) {
           dependsOn 'appBeforeIntegrationTest'
@@ -92,5 +100,74 @@ class JavaSauceLabsPlugin implements Plugin<Project> {
       functionalTests.dependsOn "${browserSpec.displayName}Test"
     }
   }
+}
 
+class SauceListener implements TestListener, TestOutputListener {
+  private static final Pattern SESSION_ID_PATTERN = Pattern.compile("SauceOnDemandSessionID=(.+)");
+
+  private SauceREST sauceREST;
+  private String sessionId;
+
+  SauceListener(String username, String accessKey) {
+    this.sauceREST = new SauceREST(username, accessKey);
+  }
+
+  void beforeTest(TestDescriptor testDescriptor) { }
+  void beforeSuite(TestDescriptor suite) { }
+  void afterTest(TestDescriptor testDescriptor, TestResult result) { }
+
+  void afterSuite(TestDescriptor suite, TestResult result) {
+    if (sessionId) {
+      if (result.getResultType() == TestResult.ResultType.FAILURE) {
+        markJobAsFailed(sessionId);
+      }
+      if (result.getResultType() == TestResult.ResultType.SUCCESS) {
+        markJobAsPassed(sessionId);
+      }
+    }
+  }
+
+  void onOutput(TestDescriptor testDescriptor, TestOutputEvent outputEvent) {
+    Matcher matcher = SESSION_ID_PATTERN.matcher(outputEvent.getMessage());
+    if (matcher.find()) {
+      sessionId = matcher.group(1);
+    }
+  }
+
+  /**
+   * Marks a Sauce job as failed.
+   * @param sessionId the Sauce job id
+   */
+  private void markJobAsFailed(String sessionId) {
+    try {
+      if (this.sauceREST && sessionId) {
+        Map<String, Object> updates = new HashMap<String, Object>();
+        updates.put("passed", false);
+        Utils.addBuildNumberToUpdate(updates);
+        sauceREST.updateJobInfo(sessionId, updates);
+      }
+    } catch (IOException ioe) {
+      ioe.printStackTrace();
+      throw new RuntimeException(ioe);
+    }
+  }
+
+  /**
+   * Marks a Sauce job as passed.
+   * @param sessionId the Sauce job id
+   */
+  private void markJobAsPassed(String sessionId) {
+    try {
+      if (this.sauceREST && sessionId) {
+        Map<String, Object> updates = new HashMap<String, Object>();
+        updates.put("passed", true);
+        Utils.addBuildNumberToUpdate(updates);
+        sauceREST.updateJobInfo(sessionId, updates);
+      }
+
+    } catch (IOException ioe) {
+      ioe.printStackTrace();
+      throw new RuntimeException(ioe);
+    }
+  }
 }
