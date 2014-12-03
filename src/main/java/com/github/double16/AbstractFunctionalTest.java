@@ -18,6 +18,8 @@ import org.openqa.selenium.remote.RemoteWebDriver;
 import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.net.URL;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
@@ -111,6 +113,44 @@ public class AbstractFunctionalTest {
     report("end");
     driver.close();
     driver.quit();
+  }
+
+  /**
+   * Go to the given page. The class is expected to have a public static final String field named 'url' containing
+   * the relative URL. The value will be appended to {@link #baseUrl}. If the page constructor performs an 'at' check,
+   * the exception will be thrown here.
+   * @param page the page class.
+   * @return page instance.
+   */
+  public <T> T go(Class<T> page) {
+    String relative = null;
+    try {
+      Field urlField = page.getDeclaredField("url");
+      if (urlField != null && Modifier.isStatic(urlField.getModifiers())) {
+        relative = (String) urlField.get(null);
+      }
+    } catch (NoSuchFieldException e) {
+      // handled below
+    } catch (IllegalAccessException e) {
+      // handled below
+    } catch (ClassCastException e) {
+      // handled below
+    }
+    if (relative == null) {
+      throw new IllegalArgumentException(page + " must define 'public static final String url'");
+    }
+    driver.get(baseUrl+relative);
+    return at(page);
+  }
+
+  /**
+   * Returns an instance of the page. If the page constructor performs an 'at' check, the exception will be
+   * thrown here.
+   * @param page the page class.
+   * @return page instance.
+   */
+  public <T> T at(Class<T> page) {
+    return PageFactory.initElements(driver, page);
   }
 
   public void report(String name) {
