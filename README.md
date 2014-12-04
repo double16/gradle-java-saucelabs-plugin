@@ -87,9 +87,7 @@ public class MyFunctionalTest extends com.github.double16.AbstractFunctionalTest
 
   @Test
   public void testTheThing() {
-    driver.get(baseUrl+"index.do");
-    report("first-page");
-    ThingPage thingPage = PageFactory.initElements(driver, ThingPage.class);
+    ThingPage thingPage = go(ThingPage.class);
     report("thing-page");
     Assert.assertTrue(...);
   }
