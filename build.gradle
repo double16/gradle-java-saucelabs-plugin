@@ -30,6 +30,7 @@ dependencies {
     compile 'com.saucelabs:sauce_java_common:2.1.10'
     compile 'org.seleniumhq.selenium:selenium-java:2.42.2'
     compile 'com.github.detro:phantomjsdriver:1.2.0'
+    testCompile 'org.mockito:mockito-all:1.10.8'
 }
 
 group = 'com.github.double16'

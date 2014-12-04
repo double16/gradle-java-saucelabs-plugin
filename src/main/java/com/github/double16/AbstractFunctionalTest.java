@@ -14,6 +14,7 @@ import org.openqa.selenium.phantomjs.PhantomJSDriver;
 import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.remote.DesiredCapabilities;
 import org.openqa.selenium.remote.RemoteWebDriver;
+import org.openqa.selenium.support.PageFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,7 +26,7 @@ import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.*;
 
-public class AbstractFunctionalTest {
+public abstract class AbstractFunctionalTest {
   protected ThreadLocal<NumberFormat> REPORT_OUTPUT_FORMAT = new ThreadLocal<NumberFormat>() {
     @Override
     protected NumberFormat initialValue() {
@@ -51,7 +52,6 @@ public class AbstractFunctionalTest {
   private static void fixupPlatform(Map caps) {
     String platform = (String) caps.get(CapabilityType.PLATFORM);
     if (platform != null) {
-      Platform platformEnum = null;
       for(Platform p : Platform.values()) {
         for(String osName : p.getPartOfOsName()) {
           if (osName.equalsIgnoreCase(platform)) {
@@ -74,7 +74,7 @@ public class AbstractFunctionalTest {
       browserCaps.put("name", System.getProperty("saucelabs.job-name", ""));
       browserCaps.put("build", System.getProperty("saucelabs.build", ""));
       browserCaps.load(new StringReader(spec.replaceAll(",", "\n")));
-      fixupPlatform((Map) browserCaps);
+      fixupPlatform(browserCaps);
       DesiredCapabilities capabilities = new DesiredCapabilities((Map) browserCaps);
       WebDriver driver = new RemoteWebDriver(
           new URL("http://" + System.getenv("SAUCE_LABS_USER") + ":" +

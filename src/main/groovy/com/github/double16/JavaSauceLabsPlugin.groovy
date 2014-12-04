@@ -26,6 +26,7 @@ class JavaSauceLabsPlugin implements Plugin<Project> {
       }
     }
 
+    project.apply(plugin: 'java')
     project.apply(plugin: 'geb-saucelabs')
 
     project.sourceSets.create('functionalTest')
@@ -71,7 +72,7 @@ class JavaSauceLabsPlugin implements Plugin<Project> {
 
     project.extensions.browsers.all { BrowserSpec browserSpec ->
       def reportDir = project.file("${project.buildDir}/test-results/${browserSpec.displayName}")
-      def task = project.tasks.create(name: "${browserSpec.displayName}Test", type: Test) {
+      Test task = project.tasks.create(name: "${browserSpec.displayName}Test", type: Test) {
         def account = project.extensions.sauceLabs.account
         def sauceListener = new SauceListener(account.username, account.accessKey)
         addTestListener(sauceListener)
