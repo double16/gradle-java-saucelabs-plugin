@@ -40,7 +40,7 @@ import org.openqa.selenium.phantomjs.PhantomJSDriver;
 import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.remote.DesiredCapabilities;
 import org.openqa.selenium.remote.RemoteWebDriver;
-import org.openqa.selenium.support.ui.Wait;
+import org.openqa.selenium.support.PageFactory;
 
 public abstract class AbstractFunctionalTest {
     protected ThreadLocal<NumberFormat> REPORT_OUTPUT_FORMAT = new ThreadLocal<NumberFormat>() {
@@ -52,7 +52,6 @@ public abstract class AbstractFunctionalTest {
 
     @Parameter(0)
     public WebDriverFactory driverFactory;
-    protected FunctionalTestUtils utils;
     protected WebDriver driver;
     protected String baseUrl;
     protected File reportDir;
@@ -63,6 +62,9 @@ public abstract class AbstractFunctionalTest {
 
     private static String createBrowserSpecSystemPropertyName(int num) {
         if (num < 1) {
+            if (System.getProperty("geb.saucelabs.browser") != null) {
+                return "geb.saucelabs.browser";
+            }
             return "saucelabs.browser";
         }
         return "saucelabs.browser." + num;
@@ -185,19 +187,26 @@ public abstract class AbstractFunctionalTest {
         int driverSpecNum = 0;
         String spec;
         while ((spec = System.getProperty(createBrowserSpecSystemPropertyName(driverSpecNum++))) != null) {
-            Properties browserCaps = new Properties();
+            final Properties browserCaps = new Properties();
             browserCaps.put("name", System.getProperty("saucelabs.job-name", ""));
             browserCaps.put("build", System.getProperty("saucelabs.build", ""));
+            System.out.println("browserSpec = "+spec);
             browserCaps.load(new StringReader(spec.replaceAll(",", "\n")));
             fixupPlatform(browserCaps);
             final DesiredCapabilities capabilities = new DesiredCapabilities((Map) browserCaps);
             WebDriverFactory factory = new WebDriverFactory() {
                 @Override
                 public WebDriver createWebDriver() throws IOException {
-                    WebDriver driver = new RemoteWebDriver(new URL("http://" + System.getenv("SAUCE_LABS_USER") + ":"
-                            + System.getenv("SAUCE_LABS_ACCESS_PASSWORD") + "@ondemand.saucelabs.com:80/wd/hub"), capabilities);
-                    String sessionId = (((RemoteWebDriver) driver).getSessionId()).toString();
-                    System.out.println("SauceOnDemandSessionID=" + sessionId);
+                  WebDriver driver;
+                    if (browserCaps.containsKey("url")) {
+                      driver = new RemoteWebDriver(new URL((String) browserCaps.get("url")), capabilities);
+                        System.setProperty("base.hostname", (String) browserCaps.get("baseHostname"));
+                    } else {
+                      driver = new RemoteWebDriver(new URL("http://" + System.getenv("SAUCE_LABS_USER") + ":"
+                          + System.getenv("SAUCE_LABS_ACCESS_PASSWORD") + "@ondemand.saucelabs.com:80/wd/hub"), capabilities);
+                      String sessionId = (((RemoteWebDriver) driver).getSessionId()).toString();
+                      System.out.println("SauceOnDemandSessionID=" + sessionId);
+                    }
                     return driver;
                 }
             };
@@ -296,7 +305,6 @@ public abstract class AbstractFunctionalTest {
     @Before
     public void setUp() throws Exception {
         this.driver = driverFactory.createWebDriver();
-        this.utils = new FunctionalTestUtils(driver);
         reportDir = new File(new File(new File(System.getProperty("functionalTests.resultsDir", "build/reports/tests/"
                 + driver.getClass().getSimpleName())), getClass().getSimpleName()), testName.getMethodName());
         reportDir.mkdirs();
@@ -306,12 +314,22 @@ public abstract class AbstractFunctionalTest {
     @After
     public void tearDown() {
         report("end");
-        driver.quit();
+        if (driver != null) {
+          driver.quit();
+        }
+    }
+
+    protected String getBaseUrl() {
+        String baseHostname = System.getProperty("base.hostname");
+        if (baseHostname != null && baseHostname.trim().length() > 0) {
+            return baseUrl.replaceFirst("localhost", baseHostname);
+        }
+        return baseUrl;
     }
 
     /**
      * Go to the given page. The class is expected to have a public static final String field named 'url' containing the relative
-     * URL. The value will be appended to {@link #baseUrl}. If the page constructor performs an 'at' check, the exception will be
+     * URL. The value will be appended to {@link #getBaseUrl()}. If the page constructor performs an 'at' check, the exception will be
      * thrown here.
      * 
      * @param page the page class.
@@ -334,7 +352,7 @@ public abstract class AbstractFunctionalTest {
         if (relative == null) {
             throw new IllegalArgumentException(page + " must define 'public static final String url'");
         }
-        driver.get(baseUrl + relative);
+        driver.get(getBaseUrl() + relative);
         return at(page);
     }
 
@@ -345,14 +363,14 @@ public abstract class AbstractFunctionalTest {
      * @return page instance.
      */
     public <T> T at(Class<T> page) {
-        return utils.at(page);
+        return PageFactory.initElements(driver, page);
     }
 
     /**
      * Go to the base URL.
      */
     public void home() {
-        driver.get(baseUrl);
+        driver.get(getBaseUrl());
     }
 
     public void report(String name) {
@@ -366,13 +384,5 @@ public abstract class AbstractFunctionalTest {
         } catch (IOException e) {
             e.printStackTrace(System.err);
         }
-    }
-
-    public Wait<WebDriver> quick() {
-        return utils.quick();
-    }
-
-    public Wait<WebDriver> slow() {
-        return utils.slow();
     }
 }
