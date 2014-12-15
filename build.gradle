@@ -34,7 +34,7 @@ dependencies {
 }
 
 group = 'com.github.double16'
-version= '0.1-SNAPSHOT'
+version= '0.2-SNAPSHOT'
 description = """Provides support for running Selenium/junit functional tests with Sauce Labs."""
 
 uploadArchives {

@@ -87,8 +87,6 @@ class JavaSauceLabsPlugin implements Plugin<Project> {
         systemProperty 'functionalTests.resultsDir', reportDir.getCanonicalPath()
         systemProperty 'saucelabs.job-name', project.name
         systemProperty 'saucelabs.build', project.version
-        dependsOn 'openSauceTunnelInBackground'
-        finalizedBy 'closeSauceTunnel'
         if (project.plugins.findPlugin('org.akhikhl.gretty')) {
           dependsOn 'appBeforeIntegrationTest'
           finalizedBy 'appAfterIntegrationTest'
@@ -96,7 +94,12 @@ class JavaSauceLabsPlugin implements Plugin<Project> {
       }
       browserSpec.testTask = task
       browserSpec.configureTestTask()
-      task.systemProperty 'saucelabs.browser', browserSpec.testTask.getSystemProperties().get('geb.saucelabs.browser')
+      String browserStr = getSystemProperties().get('geb.saucelabs.browser')
+      task.systemProperty 'saucelabs.browser', browserStr
+      if (!browserStr.contains("url=")) {
+        task.dependsOn 'openSauceTunnelInBackground'
+        task.finalizedBy 'closeSauceTunnel'
+      }
 
       functionalTests.dependsOn "${browserSpec.displayName}Test"
     }
