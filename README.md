@@ -1,6 +1,8 @@
 gradle-java-saucelabs-plugin
 ============================
 
+[ ![Codeship Status for double16/gradle-java-saucelabs-plugin](https://codeship.com/projects/d3e616d0-9380-0132-3992-3ef2b4144a88/status?branch=master)](https://codeship.com/projects/62262)
+
 Gradle Plugin to help integrate Sauce Labs functional testing into a Java/JUnit stack. The Gradle build will create
 the tasks necessary to run the tests, including starting a Sauce Connect tunnel. The JUnit tests require some integration
 which is provided by a base test class.
