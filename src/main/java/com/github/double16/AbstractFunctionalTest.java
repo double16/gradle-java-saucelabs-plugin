@@ -23,7 +23,8 @@ import java.util.zip.ZipFile;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.SystemUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.SystemUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -178,6 +179,21 @@ public abstract class AbstractFunctionalTest {
         }
     }
 
+    private static Properties buildCapabilities(String spec) throws IOException {
+        final Properties browserCaps = new Properties();
+        browserCaps.put("name", System.getProperty("saucelabs.job-name", ""));
+        browserCaps.put("build", System.getProperty("saucelabs.build", ""));
+        System.out.println("browserSpec = "+spec);
+        browserCaps.load(new StringReader(spec.replaceAll(",", "\n")));
+        fixupPlatform(browserCaps);
+        browserCaps.put("selenium-version", "2.42.2");
+        if (StringUtils.isNotBlank(browserCaps.getProperty("browserName"))
+            && browserCaps.getProperty("browserName").replaceAll("[^A-Za-z]", "").equalsIgnoreCase("internetexplorer")) {
+            browserCaps.put("iedriver-version", "2.42.0");
+        }
+        return browserCaps;
+    }
+
     @Parameterized.Parameters
     public static Collection<WebDriverFactory[]> drivers() throws IOException {
         boolean ci = System.getenv("JENKINS_URL") != null;
@@ -187,12 +203,7 @@ public abstract class AbstractFunctionalTest {
         int driverSpecNum = 0;
         String spec;
         while ((spec = System.getProperty(createBrowserSpecSystemPropertyName(driverSpecNum++))) != null) {
-            final Properties browserCaps = new Properties();
-            browserCaps.put("name", System.getProperty("saucelabs.job-name", ""));
-            browserCaps.put("build", System.getProperty("saucelabs.build", ""));
-            System.out.println("browserSpec = "+spec);
-            browserCaps.load(new StringReader(spec.replaceAll(",", "\n")));
-            fixupPlatform(browserCaps);
+            final Properties browserCaps = buildCapabilities(spec);
             final DesiredCapabilities capabilities = new DesiredCapabilities((Map) browserCaps);
             WebDriverFactory factory = new WebDriverFactory() {
                 @Override
