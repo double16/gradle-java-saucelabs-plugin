@@ -94,7 +94,7 @@ class JavaSauceLabsPlugin implements Plugin<Project> {
       }
       browserSpec.testTask = task
       browserSpec.configureTestTask()
-      String browserStr = getSystemProperties().get('geb.saucelabs.browser')
+      String browserStr = browserSpec.testTask.getSystemProperties().get('geb.saucelabs.browser')
       task.systemProperty 'saucelabs.browser', browserStr
       if (!browserStr.contains("url=")) {
         task.dependsOn 'openSauceTunnelInBackground'
