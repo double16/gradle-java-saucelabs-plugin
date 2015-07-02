@@ -1,58 +1,85 @@
 package com.github.double16;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.StringReader;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.net.URL;
-import java.net.URLConnection;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.Collection;
-import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
+import com.saucelabs.saucerest.SauceREST;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.SystemUtils;
+import org.apache.log4j.Logger;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
+import org.junit.rules.ErrorCollector;
 import org.junit.rules.TestName;
+import org.junit.rules.TestRule;
+import org.junit.rules.TestWatcher;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
-import org.openqa.selenium.Dimension;
-import org.openqa.selenium.OutputType;
 import org.openqa.selenium.Platform;
-import org.openqa.selenium.TakesScreenshot;
 import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.phantomjs.PhantomJSDriver;
+import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.remote.DesiredCapabilities;
 import org.openqa.selenium.remote.RemoteWebDriver;
-import org.openqa.selenium.support.PageFactory;
+import org.openqa.selenium.support.ui.Wait;
 
+/**
+ * Base class for functional tests. The browser choices depend on environment:
+ * 
+ * Local development:
+ * 1. phantomjs, a headless WebKit browser
+ * 2. Chrome
+ * 
+ * Selenium Grid:
+ * 1. environment variable "SELENIUM_FULL_URL" targeting the grid to use, i.e. https://ondemand.saucelabs.com:80/wd/hub
+ * 2. environment variable "SELENIUM_GRID_USER" with grid user name
+ * 3. environment variable "SELENIUM_GRID_ACCESS_PASSWORD" with grid password/access key
+ * 4. system property "functionalTests.browser" with grid properties to specify the browser, either newline or comma separate,
+ * i.e. "browserName=firefox,platform=win7". "platform" must be an enum value from org.openqa.selenium.Platform or part defined in the enum constructor.
+ *
+ */
 public abstract class AbstractFunctionalTest {
-    protected ThreadLocal<NumberFormat> REPORT_OUTPUT_FORMAT = new ThreadLocal<NumberFormat>() {
+	private static final Logger log = Logger.getLogger(AbstractFunctionalTest.class);
+	
+	static final String SELENIUM_GRID = "SELENIUM_FULL_URL";
+	static final String SELENIUM_GRID_USER = "SELENIUM_GRID_USER";
+    static final String SELENIUM_GRID_ACCESS_PASSWORD = "SELENIUM_GRID_ACCESS_PASSWORD";
+    private static final WebDriverService WEB_DRIVER_SERVICE = new WebDriverService();
+    protected static final WebDriverCache WEB_DRIVER_CACHE = new WebDriverCache();
+    
+	protected final ThreadLocal<NumberFormat> REPORT_OUTPUT_FORMAT = new ThreadLocal<NumberFormat>() {
         @Override
         protected NumberFormat initialValue() {
             return new DecimalFormat("000");
         }
     };
 
+    static {
+        Runtime.getRuntime().addShutdownHook(new Thread("WebDriver cache cleanup") {
+            @Override
+            public void run() {
+                WEB_DRIVER_CACHE.quitAll();
+            }
+        });
+    }
+
+    static {
+        WEB_DRIVER_CACHE.setCacheEnabled(Boolean.valueOf(System.getProperty("functionalTests.cacheBrowser", "true")));
+    }
+
     @Parameter(0)
     public WebDriverFactory driverFactory;
+    protected FunctionalTestUtils utils;
     protected WebDriver driver;
     protected String baseUrl;
     protected File reportDir;
@@ -60,187 +87,146 @@ public abstract class AbstractFunctionalTest {
 
     @Rule
     public TestName testName = new TestName();
-
+    
+    @Rule
+    public final ErrorCollector collector = new ErrorCollector();
+    
     private static String createBrowserSpecSystemPropertyName(int num) {
         if (num < 1) {
-            if (System.getProperty("geb.saucelabs.browser") != null) {
-                return "geb.saucelabs.browser";
-            }
-            return "saucelabs.browser";
+            return "functionalTests.browser";
         }
-        return "saucelabs.browser." + num;
+        return "functionalTests.browser." + num;
     }
 
-    private static void fixupPlatform(Map caps) {
-        String platform = (String) caps.get(CapabilityType.PLATFORM);
-        if (platform != null) {
-            for (Platform p : Platform.values()) {
-                for (String osName : p.getPartOfOsName()) {
-                    if (osName.equalsIgnoreCase(platform)) {
-                        caps.put(CapabilityType.PLATFORM, p.name());
-                        return;
-                    }
-                }
-            }
-        }
+    /**
+     * Resolve the specified platform to the Selenium enum.
+     */
+    static String resolveSeleniumPlatform(String platform) {
+    	if (StringUtils.isBlank(platform)) {
+    		return platform;
+    	}
+    	for(Platform p : Platform.values()) {
+    		if (platform.equalsIgnoreCase(p.name())) {
+    			return p.name();
+    		}
+    		for(String pn : p.getPartOfOsName()) {
+    			if (platform.equalsIgnoreCase(pn)) {
+    				return p.name();
+    			}
+    		}
+    	}
+		return platform;
     }
-
-    private static File locateDriver(File file, URL path) throws IOException {
-        File driverInPath = findDriverInPath(file);
-        if (driverInPath != null) {
-            System.out.println("Using " + driverInPath);
-            return driverInPath;
-        }
-        downloadDriver(file, path);
-        System.out.println("Using " + file);
-        return file;
+    
+    private static String getPropertyOrEnv(String name) {
+    	return System.getProperty(name, System.getenv(name));
     }
-
-    private static File findDriverInPath(File file) throws IOException {
-        File driver = new File(new File(System.getProperty("user.home")), file.getName());
-        if (driver.canExecute()) {
-            return driver;
-        }
-        String path = System.getenv("PATH");
-        if (path == null) {
-            return null;
-        }
-        String[] parts = path.split(File.pathSeparator);
-        for (String part : parts) {
-            driver = new File(new File(part), file.getName());
-            if (driver.canExecute()) {
-                return driver;
-            }
-        }
-        return null;
-    }
-
-    private static void downloadDriver(File file, URL path) throws IOException {
-        if (!file.exists()) {
-            System.out.println("Downloading " + path);
-            // download driver
-            File driver = File.createTempFile("driver", ".zip");
-            URLConnection connection = path.openConnection();
-            String redirect = connection.getHeaderField("Location");
-            if (redirect != null) {
-                URL redirectUrl = new URL(path, redirect);
-                System.out.println("Redirect to " + redirectUrl);
-                downloadDriver(file, redirectUrl);
-                return;
-            }
-            InputStream is = null;
-            OutputStream os = null;
-            try {
-                is = connection.getInputStream();
-                os = new FileOutputStream(driver);
-                IOUtils.copy(is, os);
-            } finally {
-                if (is != null) {
-                    is.close();
-                }
-                if (os != null) {
-                    os.close();
-                }
-            }
-
-            // unzip
-            System.out.println("Extracting " + path);
-            ZipFile zip = new ZipFile(driver);
-            Enumeration<? extends ZipEntry> entries = zip.entries();
-            while (entries.hasMoreElements()) {
-                ZipEntry entry = entries.nextElement();
-                if (!entry.getName().equals(file.getName())) {
-                    continue;
-                }
-                System.out.println("Found " + file);
-                file.getParentFile().mkdirs();
-                InputStream zis = null;
-                OutputStream zos = null;
-                try {
-                    zis = zip.getInputStream(entry);
-                    zos = new FileOutputStream(file);
-                    IOUtils.copy(zis, zos);
-                } finally {
-                    if (zis != null) {
-                        zis.close();
-                    }
-                    if (zos != null) {
-                        zos.close();
-                    }
-                }
-                file.setExecutable(true);
-            }
-
-            driver.delete();
-
-            if (!file.exists()) {
-                throw new IOException("Error downloading " + file + " from " + path);
-            }
-        }
-    }
-
-    private static Properties buildCapabilities(String spec) throws IOException {
-        final Properties browserCaps = new Properties();
-        browserCaps.put("name", System.getProperty("saucelabs.job-name", ""));
-        browserCaps.put("build", System.getProperty("saucelabs.build", ""));
-        System.out.println("browserSpec = "+spec);
+    
+    static Properties buildCapabilities(String spec, String seleniumGridStr) throws IOException {
+        Properties browserCaps = new Properties();
         browserCaps.load(new StringReader(spec.replaceAll(",", "\n")));
-        fixupPlatform(browserCaps);
-        browserCaps.put("selenium-version", "2.42.2");
-        if (StringUtils.isNotBlank(browserCaps.getProperty("browserName"))
-            && browserCaps.getProperty("browserName").replaceAll("[^A-Za-z]", "").equalsIgnoreCase("internetexplorer")) {
-            browserCaps.put("iedriver-version", "2.42.0");
+        if (seleniumGridStr.contains("saucelabs")) {
+            browserCaps.put("selenium-version", "2.42.2");
+            String browserName = browserCaps.getProperty("browserName");
+            if (StringUtils.isNotBlank(browserName) 
+            		&& browserName.replaceAll("[^A-Za-z]", "").equalsIgnoreCase("internetexplorer")) {
+            	browserCaps.put("iedriver-version", "2.42.0");
+            }        	
         }
+        browserCaps.put("name", System.getProperty("functionalTests.job-name", ""));
+        browserCaps.put("build", System.getProperty("functionalTests.build", ""));
+        browserCaps.put("platform", resolveSeleniumPlatform((String) browserCaps.get("platform")));
         return browserCaps;
     }
+    
+    private static WebDriverFactory createRemoteWebDriverFactory(String spec) throws IOException {
+        final String seleniumGridStr = getPropertyOrEnv(SELENIUM_GRID);
+        Properties browserCaps = buildCapabilities(spec, seleniumGridStr);
+        final DesiredCapabilities capabilities = new DesiredCapabilities((Map) browserCaps);
+        capabilities.setCapability(CapabilityType.ForSeleniumServer.ENSURING_CLEAN_SESSION, true);
+        return new WebDriverFactory() {
+            @Override
+            public WebDriver createWebDriver(String testName) throws IOException {
+            	if (StringUtils.isNotBlank(testName)) {
+                	capabilities.setCapability("name", testName);
+            	}
+				return new RemoteWebDriver(new URL(seleniumGridStr), capabilities);
+            }
+            @Override
+            public String getIdentifier() {
+                return sanitizeForFilesystem(capabilities.getBrowserName() + "_" + capabilities.getVersion() + "_"
+                        + capabilities.getPlatform());
+            }
 
-    @Parameterized.Parameters
+            @Override
+            public String toString() {
+                return getIdentifier();
+            }
+        };
+    }
+    
+    @Parameterized.Parameters(name = "{0}")
+    @SuppressWarnings("PMD")
     public static Collection<WebDriverFactory[]> drivers() throws IOException {
-        boolean ci = System.getenv("JENKINS_URL") != null;
-
         List<WebDriverFactory[]> drivers = new LinkedList<WebDriverFactory[]>();
 
         int driverSpecNum = 0;
         String spec;
         while ((spec = System.getProperty(createBrowserSpecSystemPropertyName(driverSpecNum++))) != null) {
-            final Properties browserCaps = buildCapabilities(spec);
-            final DesiredCapabilities capabilities = new DesiredCapabilities((Map) browserCaps);
-            WebDriverFactory factory = new WebDriverFactory() {
-                @Override
-                public WebDriver createWebDriver() throws IOException {
-                  WebDriver driver;
-                    if (browserCaps.containsKey("url")) {
-                      driver = new RemoteWebDriver(new URL((String) browserCaps.get("url")), capabilities);
-                        System.setProperty("base.hostname", (String) browserCaps.get("baseHostname"));
-                    } else {
-                      driver = new RemoteWebDriver(new URL("http://" + System.getenv("SAUCE_LABS_USER") + ":"
-                          + System.getenv("SAUCE_LABS_ACCESS_PASSWORD") + "@ondemand.saucelabs.com:80/wd/hub"), capabilities);
-                      String sessionId = (((RemoteWebDriver) driver).getSessionId()).toString();
-                      System.out.println("SauceOnDemandSessionID=" + sessionId);
-                    }
-                    return driver;
+            if ("chrome".equalsIgnoreCase(spec)) {
+                try {
+                    drivers.add(new WebDriverFactory[] { WEB_DRIVER_SERVICE.createChromeDriverFactory() });
+                } catch (Exception e) {
+                    System.err.println("Unable to locate Chrome driver: " + e.getMessage());
                 }
-            };
-            drivers.add(new WebDriverFactory[] { factory });
+            } else if ("firefox".equalsIgnoreCase(spec)) {
+                try {
+                    drivers.add(new WebDriverFactory[] { WEB_DRIVER_SERVICE.createFirefoxDriverFactory() });
+                } catch (Exception e) {
+                    System.err.println("Unable to locate Firefox driver: " + e.getMessage());
+                }
+            } else if ("ie".equalsIgnoreCase(spec) || "internetexplorer".equalsIgnoreCase(spec)) {
+                try {
+                    drivers.add(new WebDriverFactory[] { WEB_DRIVER_SERVICE.createInternetExplorerFactory() });
+                } catch (Exception e) {
+                    System.err.println("Unable to locate Internet Explorer driver: " + e.getMessage());
+                }
+            } else if ("phantomjs".equalsIgnoreCase(spec)) {
+                try {
+                    drivers.add(new WebDriverFactory[] { WEB_DRIVER_SERVICE.createPhantomJSDriverFactory() });
+                } catch (Exception e) {
+                    System.err.println("Unable to locate PhantomJS driver: " + e.getMessage());
+                }
+            } else {
+                if (StringUtils.isBlank(getPropertyOrEnv(SELENIUM_GRID_USER))
+                        || StringUtils.isBlank(getPropertyOrEnv(SELENIUM_GRID_USER))
+                        || StringUtils.isBlank(getPropertyOrEnv(SELENIUM_GRID_ACCESS_PASSWORD))) {
+                    throw new IOException("Missing required environment variables for selenium grid: " + SELENIUM_GRID + ", "
+                            + SELENIUM_GRID_USER + " and " + SELENIUM_GRID_ACCESS_PASSWORD);
+                }
+                drivers.add(new WebDriverFactory[] { createRemoteWebDriverFactory(spec) });
+            }
         }
 
         if (drivers.isEmpty()) {
             try {
-                if (!ci) {
-                    drivers.add(new WebDriverFactory[] { createChromeDriverFactory() });
-                }
+                drivers.add(new WebDriverFactory[] { WEB_DRIVER_SERVICE.createChromeDriverFactory() });
             } catch (Exception e) {
                 System.err.println("Unable to locate Chrome driver: " + e.getMessage());
             }
             try {
-                if (!ci) {
-                    drivers.add(new WebDriverFactory[] { createFirefoxDriverFactory() });
-                }
+                drivers.add(new WebDriverFactory[] { WEB_DRIVER_SERVICE.createFirefoxDriverFactory() });
             } catch (Exception e) {
                 System.err.println("Unable to locate Firefox driver: " + e.getMessage());
             }
             try {
-                drivers.add(new WebDriverFactory[] { createPhantomJSDriverFactory() });
+                drivers.add(new WebDriverFactory[] { WEB_DRIVER_SERVICE.createInternetExplorerFactory() });
+            } catch (Exception e) {
+                System.err.println("Unable to locate Internet Explorer driver: " + e.getMessage());
+            }
+            // FYI: phantomjs sometimes requires fixes that other browsers don't
+            try {
+                drivers.add(new WebDriverFactory[] { WEB_DRIVER_SERVICE.createPhantomJSDriverFactory() });
             } catch (Exception e) {
                 System.err.println("Unable to locate PhantomJS driver: " + e.getMessage());
             }
@@ -249,122 +235,119 @@ public abstract class AbstractFunctionalTest {
         return drivers;
     }
 
-    protected static WebDriverFactory createChromeDriverFactory() throws IOException {
-        File chromeDriver;
-        if (SystemUtils.IS_OS_WINDOWS) {
-            chromeDriver = locateDriver(new File("target/webdrivers/chrome/chromedriver.exe"), new URL(
-                    "http://chromedriver.storage.googleapis.com/2.10/chromedriver_win32.zip"));
-        } else if (SystemUtils.IS_OS_LINUX) {
-            if (SystemUtils.OS_ARCH.contains("64")) {
-                chromeDriver = locateDriver(new File("target/webdrivers/chrome/chromedriver"), new URL(
-                        "http://chromedriver.storage.googleapis.com/2.10/chromedriver_linux64.zip"));
-            } else {
-                chromeDriver = locateDriver(new File("target/webdrivers/chrome/chromedriver"), new URL(
-                        "http://chromedriver.storage.googleapis.com/2.10/chromedriver_linux32.zip"));
-            }
-        } else if (SystemUtils.IS_OS_MAC) {
-            chromeDriver = locateDriver(new File("target/webdrivers/chrome/chromedriver"), new URL(
-                    "http://chromedriver.storage.googleapis.com/2.10/chromedriver_mac32.zip"));
-        } else {
-            throw new IOException("No Chrome driver for this OS");
+    /**
+     * Return the context root for the application. This does not include the beginning of
+     * the URL through the hostname and port. The context root must not start with a slash and
+     * must end with a slash. The smallest acceptable value is "/". 
+     */
+    public abstract String getContextRoot();
+    
+    private static String sanitizeForFilesystem(String str) {
+        if (str == null) {
+            return "";
         }
-        System.setProperty("webdriver.chrome.driver", chromeDriver.getAbsolutePath());
-        return new WebDriverFactory() {
-            @Override
-            public WebDriver createWebDriver() {
-                return new ChromeDriver();
-            }
-        };
+    	return str.replaceAll("[^A-Za-z0-9= ]+", "_");
     }
-
-    protected static WebDriverFactory createFirefoxDriverFactory() throws IOException {
-        // 2014-12-05 selenium 2.40.0 isn't compatible with FF33
-        throw new IOException("Selenium 2.40.0 is not compatible with FF33");
-        // return new FirefoxDriver();
-    }
-
-    protected static WebDriverFactory createPhantomJSDriverFactory() throws IOException {
-        File phantomjsDriver;
-        if (SystemUtils.IS_OS_WINDOWS) {
-            phantomjsDriver = locateDriver(new File("target/webdrivers/phantomjs/phantomjs.exe"), new URL(
-                    "https://bitbucket.org/ariya/phantomjs/downloads/phantomjs-1.9.8-windows.zip"));
-        } else if (SystemUtils.IS_OS_LINUX) {
-            if (SystemUtils.OS_ARCH.contains("64")) {
-                phantomjsDriver = locateDriver(new File("target/webdrivers/phantomjs/phantomjs"), new URL(
-                        "https://bitbucket.org/ariya/phantomjs/downloads/phantomjs-1.9.8-linux-x86_64.tar.bz2"));
-            } else {
-                phantomjsDriver = locateDriver(new File("target/webdrivers/phantomjs/phantomjs"), new URL(
-                        "https://bitbucket.org/ariya/phantomjs/downloads/phantomjs-1.9.8-linux-i686.tar.bz2"));
-            }
-        } else if (SystemUtils.IS_OS_MAC) {
-            phantomjsDriver = locateDriver(new File("target/webdrivers/phantomjs/phantomjs"), new URL(
-                    "https://bitbucket.org/ariya/phantomjs/downloads/phantomjs-1.9.8-macosx.zip"));
-        } else {
-            throw new IOException("No phantomjs driver for this OS");
-        }
-        System.setProperty("phantomjs.binary.path", phantomjsDriver.getAbsolutePath());
-        return new WebDriverFactory() {
-            @Override
-            public WebDriver createWebDriver() {
-                PhantomJSDriver driver = new PhantomJSDriver();
-                driver.manage().window().setSize(new Dimension(1024, 768));
-                return driver;
-            }
-        };
-    }
-
+    
     @Before
     public void setUp() throws Exception {
-        this.driver = driverFactory.createWebDriver();
-        reportDir = new File(new File(new File(System.getProperty("functionalTests.resultsDir", "build/reports/tests/"
-                + driver.getClass().getSimpleName())), getClass().getSimpleName()), testName.getMethodName());
+    	this.baseUrl = System.getProperty("functionalTests.baseUrl", "http://localhost:10039");
+    	if (!this.baseUrl.contains("://")) {
+    		throw new IllegalArgumentException("functionalTests.baseUrl must be in the form http://localhost:10039");
+    	}
+    	if (this.baseUrl.endsWith("/")) {
+    		this.baseUrl = this.baseUrl.substring(0, this.baseUrl.length()-1);
+    	}
+    	if (StringUtils.isBlank(getContextRoot()) || !getContextRoot().endsWith("/") || (getContextRoot().length() > 1 && getContextRoot().startsWith("/"))) {
+    		throw new IllegalArgumentException("getContextRoot() must not be empty, must not begin with a slash and must end with a slash. It may be '/'.");
+    	}
+    	if ("/".equals(getContextRoot())) {
+        	this.baseUrl += getContextRoot();
+    	} else {
+    		this.baseUrl += "/" + getContextRoot();
+    	}
+        this.driver = WEB_DRIVER_CACHE.getWebDriver(driverFactory, getClass().getSimpleName() + "." + testName.getMethodName());
+        this.utils = new FunctionalTestUtils(driver);
+        String browser = driver.getClass().getSimpleName();
+        if (driver instanceof RemoteWebDriver) {
+        	browser = ((RemoteWebDriver) driver).getCapabilities().getBrowserName();
+        }
+        reportDir = new File(new File(new File(System.getProperty("functionalTests.resultsDir", "build/functional-test-results/"
+                + browser + "/artifacts")), getClass().getSimpleName()), sanitizeForFilesystem(testName.getMethodName()));
         reportDir.mkdirs();
+        // clean up previous test results
+        File[] oldFiles = reportDir.listFiles();
+        if (oldFiles != null) {
+        	for(File f : oldFiles) {
+        		f.delete();
+        	}
+        }
         System.out.println("Reports in " + reportDir.getAbsolutePath());
     }
 
     @After
     public void tearDown() {
-        report("end");
-        if (driver != null) {
-          driver.quit();
-        }
+    	if (driver != null) {
+        	try {
+                report("end");    		
+        	} finally {
+                WEB_DRIVER_CACHE.maybeQuitWebDriver(driver);
+        	}    		
+    	}
     }
 
-    protected String getBaseUrl() {
-        String baseHostname = System.getProperty("base.hostname");
-        if (baseHostname != null && baseHostname.trim().length() > 0) {
-            return baseUrl.replaceFirst("localhost", baseHostname);
-        }
-        return baseUrl;
-    }
+    @Rule
+    public final TestRule sauceUpdater = new TestWatcher() {
+    	private void updateSauce(Map<String, Object> updates) {
+    		String seleniumGridUrl = getPropertyOrEnv(SELENIUM_GRID);
+    		if (seleniumGridUrl == null || !seleniumGridUrl.contains("saucelabs.com")) {
+    			return;
+    		}
+    		
+    		try {
+        		SauceREST sauceREST = new SauceREST(getPropertyOrEnv(SELENIUM_GRID_USER), getPropertyOrEnv(SELENIUM_GRID_ACCESS_PASSWORD));
+        		String sessionId = ((RemoteWebDriver) driver).getSessionId().toString();
+        		sauceREST.updateJobInfo(sessionId, updates);    			
+    		} catch (Exception e) {
+    			log.warn("Error updating Sauce Labs test results: "+e.toString());
+    		}
+    	}
+    	
+    	protected void succeeded(org.junit.runner.Description description) {
+    		Map<String, Object> updates = new HashMap<String, Object>();
+    		updates.put("passed", Boolean.TRUE);
+    		updateSauce(updates);
+    	}
 
+        protected void failed(Throwable e, org.junit.runner.Description description) {
+    		Map<String, Object> updates = new HashMap<String, Object>();
+    		updates.put("passed", Boolean.FALSE);
+    		updateSauce(updates);
+    	}
+    };
+	
     /**
      * Go to the given page. The class is expected to have a public static final String field named 'url' containing the relative
-     * URL. The value will be appended to {@link #getBaseUrl()}. If the page constructor performs an 'at' check, the exception will be
+     * URL. The value will be appended to {@link #baseUrl}. If the page constructor performs an 'at' check, the exception will be
      * thrown here.
      * 
      * @param page the page class.
      * @return page instance.
      */
     public <T> T go(Class<T> page) {
-        String relative = null;
-        try {
-            Field urlField = page.getDeclaredField("url");
-            if (urlField != null && Modifier.isStatic(urlField.getModifiers())) {
-                relative = (String) urlField.get(null);
-            }
-        } catch (NoSuchFieldException e) {
-            // handled below
-        } catch (IllegalAccessException e) {
-            // handled below
-        } catch (ClassCastException e) {
-            // handled below
-        }
+        String relative = utils.getUrl(page);
         if (relative == null) {
             throw new IllegalArgumentException(page + " must define 'public static final String url'");
         }
-        driver.get(getBaseUrl() + relative);
+        driver.get(baseUrl + relative);
         return at(page);
+    }
+
+    /**
+     * Go to the given relative URL. The value will be appended to {@link #baseUrl}.
+     */
+    public void go(String relative) {
+        driver.get(baseUrl + relative);
     }
 
     /**
@@ -374,26 +357,32 @@ public abstract class AbstractFunctionalTest {
      * @return page instance.
      */
     public <T> T at(Class<T> page) {
-        return PageFactory.initElements(driver, page);
+        return utils.at(page);
     }
 
     /**
      * Go to the base URL.
      */
     public void home() {
-        driver.get(getBaseUrl());
+        driver.get(baseUrl);
     }
 
     public void report(String name) {
         try {
-            if (driver instanceof TakesScreenshot) {
-                name = name.replaceAll("[^A-Za-z0-9-]+", "_");
-                File screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
-                FileUtils.copyFile(screenshot, new File(reportDir, REPORT_OUTPUT_FORMAT.get().format(reportOutputNum++) + "-"
-                        + name + ".png"));
-            }
+        	utils.report(reportDir, REPORT_OUTPUT_FORMAT.get().format(reportOutputNum++) + "-"
+                    + name.replaceAll("[^A-Za-z0-9-]+", "_"));
+        } catch (WebDriverException e) {
+            log.error("Reporting screen shot + HTML", e);
         } catch (IOException e) {
-            e.printStackTrace(System.err);
+            log.error("Reporting screen shot + HTML", e);
         }
+    }
+
+    public Wait<WebDriver> quick() {
+        return utils.quick();
+    }
+
+    public Wait<WebDriver> slow() {
+        return utils.slow();
     }
 }

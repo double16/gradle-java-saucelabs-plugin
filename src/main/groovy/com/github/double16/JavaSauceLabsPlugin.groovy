@@ -20,8 +20,10 @@ class JavaSauceLabsPlugin implements Plugin<Project> {
   void apply(Project project) {
     project.beforeEvaluate {
       project.buildscript.dependencies {
-        classpath 'org.gebish:geb-gradle:0.10.0'
-        classpath 'com.saucelabs:saucerest:1.0.22'
+        classpath('org.gebish:geb-gradle:0.10.0') {
+          exclude module: 'groovy-all'
+        }
+        classpath 'com.saucelabs:saucerest:1.0.25'
         classpath 'com.saucelabs:sauce_java_common:2.1.10'
       }
     }
@@ -39,10 +41,10 @@ class JavaSauceLabsPlugin implements Plugin<Project> {
     project.dependencies {
       sauceConnect "com.saucelabs:ci-sauce:1.84"
 
-      functionalTestCompile 'junit:junit:4.11'
-      functionalTestCompile 'org.seleniumhq.selenium:selenium-java:2.42.2'
-      functionalTestCompile 'com.github.detro:phantomjsdriver:1.2.0'
-      functionalTestCompile 'com.saucelabs:saucerest:1.0.22'
+      functionalTestCompile 'junit:junit:4.12'
+      functionalTestCompile 'org.seleniumhq.selenium:selenium-java:2.46.0'
+      functionalTestCompile 'com.codeborne:phantomjsdriver:1.2.1'
+      functionalTestCompile 'com.saucelabs:saucerest:1.0.25'
       functionalTestCompile 'com.saucelabs:sauce_java_common:2.1.10'
     }
 
