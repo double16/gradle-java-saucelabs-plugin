@@ -7,6 +7,8 @@ import static org.junit.Assert.assertTrue;
 import static org.hamcrest.CoreMatchers.*;
 
 import java.io.IOException;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collection;
 import java.util.Properties;
 
@@ -185,11 +187,8 @@ public class AbstractFunctionalTestTest {
         assertNotNull(test.slow());
     }
 
-    @Ignore
     @Test
     public void driversLocal() throws IOException {
-    	/*
-    	import java.nio.*
         Path webdrivers = Paths.get("target/webdrivers");
         if (webdrivers.toFile().canRead()) {
             Files.walkFileTree(webdrivers, new SimpleFileVisitor<Path>() {
@@ -206,7 +205,6 @@ public class AbstractFunctionalTestTest {
                 }
             });
         }
-        */
         Collection<WebDriverFactory[]> drivers = AbstractFunctionalTest.drivers();
         assertTrue(drivers.size() > 0);
     }
