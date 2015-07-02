@@ -11,7 +11,6 @@ import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ByIdOrName;
-import org.openqa.selenium.support.pagefactory.ByAll;
 
 public class PageMockHelper {
     public static final String usernameStr = "username";

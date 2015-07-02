@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
+import com.saucelabs.saucerest.SauceREST;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.Logger;
 import org.junit.After;
@@ -143,7 +144,7 @@ public abstract class AbstractFunctionalTest {
         Properties browserCaps = buildCapabilities(spec, seleniumGridStr);
         final DesiredCapabilities capabilities = new DesiredCapabilities((Map) browserCaps);
         capabilities.setCapability(CapabilityType.ForSeleniumServer.ENSURING_CLEAN_SESSION, true);
-        WebDriverFactory factory = new WebDriverFactory() {
+        return new WebDriverFactory() {
             @Override
             public WebDriver createWebDriver(String testName) throws IOException {
             	if (StringUtils.isNotBlank(testName)) {
@@ -162,7 +163,6 @@ public abstract class AbstractFunctionalTest {
                 return getIdentifier();
             }
         };
-        return factory;
     }
     
     @Parameterized.Parameters(name = "{0}")
@@ -317,14 +317,14 @@ public abstract class AbstractFunctionalTest {
     		Map<String, Object> updates = new HashMap<String, Object>();
     		updates.put("passed", Boolean.TRUE);
     		updateSauce(updates);
-    	};
-    	
-    	protected void failed(Throwable e, org.junit.runner.Description description) {
+    	}
+
+        protected void failed(Throwable e, org.junit.runner.Description description) {
     		Map<String, Object> updates = new HashMap<String, Object>();
     		updates.put("passed", Boolean.FALSE);
     		updateSauce(updates);
-    	};
-	};
+    	}
+    };
 	
     /**
      * Go to the given page. The class is expected to have a public static final String field named 'url' containing the relative

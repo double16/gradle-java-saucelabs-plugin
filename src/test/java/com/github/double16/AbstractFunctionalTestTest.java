@@ -7,7 +7,6 @@ import static org.junit.Assert.assertTrue;
 import static org.hamcrest.CoreMatchers.*;
 
 import java.io.IOException;
-import java.net.ProxySelector;
 import java.util.Collection;
 import java.util.Properties;
 
@@ -22,7 +21,6 @@ import org.junit.rules.ErrorCollector;
 import org.junit.rules.TestName;
 import org.mockito.Mockito;
 import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.internal.BuildInfo;
 
 public class AbstractFunctionalTestTest {
     private static final String BASE_URL = "http://localhost:8080";
@@ -213,7 +211,6 @@ public class AbstractFunctionalTestTest {
         assertTrue(drivers.size() > 0);
     }
 
-    @Ignore("HTTP proxy auth required")
     @Test
     public void driversLocalChrome() throws IOException {
         System.setProperty("functionalTests.browser", "chrome");

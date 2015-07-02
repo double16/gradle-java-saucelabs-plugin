@@ -43,13 +43,13 @@ public class FunctionalTestUtilsTest {
     
     @Before
     public void setup() {
-        WebDriver driver = AMUILoginPageMock.createDriver();
+        WebDriver driver = PageMockHelper.createDriver();
         utils = new FunctionalTestUtils(driver);
     }
 
     @Test
     public void testQuick() {
-        assertNotNull(utils.quick(AMUILoginPageMock.username));
+        assertNotNull(utils.quick(PageMockHelper.username));
     }
 
     @Test(expected = Exception.class)
@@ -59,17 +59,17 @@ public class FunctionalTestUtilsTest {
 
     @Test
     public void testSlow() {
-        assertNotNull(utils.slow(AMUILoginPageMock.username));
+        assertNotNull(utils.slow(PageMockHelper.username));
     }
 
     @Test
     public void at() {
-    	collector.checkThat(utils.at(AMUILoginPage.class), notNullValue());
+    	collector.checkThat(utils.at(LoginPage.class), notNullValue());
     }
 
     @Test
     public void at_alertHandled() {
-    	final WebElement element = AMUILoginPageMock.mockDisplayed("input");
+    	final WebElement element = PageMockHelper.mockDisplayed("input");
     	WebDriver driver = Mockito.mock(WebDriver.class);
     	
     	Alert alert = Mockito.mock(Alert.class);
@@ -80,10 +80,10 @@ public class FunctionalTestUtilsTest {
     	Mockito.when(alertLocator.alert()).thenThrow(new NoAlertPresentException());
     	
     	Mockito.when(driver.switchTo()).thenReturn(alertLocator).thenReturn(noAlertLocator);
-    	Mockito.when(driver.findElement(AMUILoginPage.at))
+    	Mockito.when(driver.findElement(LoginPage.at))
     		.thenThrow(new UnhandledAlertException("alert"))
     		.thenReturn(element);
-    	new FunctionalTestUtils(driver).at(AMUILoginPage.class);
+    	new FunctionalTestUtils(driver).at(LoginPage.class);
     }
     
     /**
@@ -93,8 +93,8 @@ public class FunctionalTestUtilsTest {
     @Test(expected = WebDriverException.class)
     public void atFail_WebDriverException() {
     	WebDriver driver = Mockito.mock(WebDriver.class);
-        Mockito.when(driver.findElement(AMUILoginPage.at)).thenThrow(new NoSuchElementException("not found"));
-        new FunctionalTestUtils(driver).at(AMUILoginPage.class);
+        Mockito.when(driver.findElement(LoginPage.at)).thenThrow(new NoSuchElementException("not found"));
+        new FunctionalTestUtils(driver).at(LoginPage.class);
     }
 
     /**
@@ -103,8 +103,8 @@ public class FunctionalTestUtilsTest {
     @Test(expected = RuntimeException.class)
     public void atFail_RuntimeException() {
     	WebDriver driver = Mockito.mock(WebDriver.class);
-		Mockito.when(driver.findElement(AMUILoginPage.at)).thenThrow(new UnsupportedOperationException());
-        new FunctionalTestUtils(driver).at(AMUILoginPage.class);
+		Mockito.when(driver.findElement(LoginPage.at)).thenThrow(new UnsupportedOperationException());
+        new FunctionalTestUtils(driver).at(LoginPage.class);
     }
     
     @Test
@@ -134,7 +134,7 @@ public class FunctionalTestUtilsTest {
     @Test
     public void reportWithHtml() throws IOException {
     	WebDriver driver = Mockito.mock(WebDriver.class);
-    	WebElement html = AMUILoginPageMock.mockDisplayed("html");
+    	WebElement html = PageMockHelper.mockDisplayed("html");
     	Mockito.when(html.getAttribute("innerHTML")).thenReturn("test");
     	Mockito.when(driver.findElement(By.cssSelector("html"))).thenReturn(html);
     	
@@ -146,16 +146,16 @@ public class FunctionalTestUtilsTest {
     	collector.checkThat("HTML output content", readContent(htmlOutput).replaceAll("\\s+", ""), is("<html>test</html>"));
     }
     
-    public interface WebDriverWithScreenshot extends WebDriver, TakesScreenshot {};
-    
+    public interface WebDriverWithScreenshot extends WebDriver, TakesScreenshot {}
+
     @Test
     public void reportWithScreenshotAndHtml() throws IOException {
-    	final String printIconUrl = getClass().getClassLoader().getResource("com/github/double16/print.gif").toExternalForm();
+    	final String printIconUrl = getClass().getClassLoader().getResource("com/github/double16/print.png").toExternalForm();
     	File printIconSource = new File(printIconUrl.replaceFirst("file:", ""));
     	assertTrue("Source icon can't be found, aborting test", printIconSource.exists());
     	
     	WebDriverWithScreenshot driver = Mockito.mock(WebDriverWithScreenshot.class);
-    	WebElement html = AMUILoginPageMock.mockDisplayed("html");
+    	WebElement html = PageMockHelper.mockDisplayed("html");
     	Mockito.when(html.getAttribute("innerHTML")).thenReturn("test");
     	Mockito.when(driver.findElement(By.cssSelector("html"))).thenReturn(html);
     	
@@ -173,7 +173,7 @@ public class FunctionalTestUtilsTest {
     @Test
     public void reportWithScreenshotFailure() throws IOException {
         WebDriverWithScreenshot driver = Mockito.mock(WebDriverWithScreenshot.class);
-        WebElement html = AMUILoginPageMock.mockDisplayed("html");
+        WebElement html = PageMockHelper.mockDisplayed("html");
         Mockito.when(html.getAttribute("innerHTML")).thenReturn("test");
         Mockito.when(driver.findElement(By.cssSelector("html"))).thenReturn(html);
 
@@ -198,8 +198,8 @@ public class FunctionalTestUtilsTest {
     @Test
     public void visibilityOfFirstElementLocatedBy_OneElement_NotVisible() {
         WebDriver driver = Mockito.mock(WebDriver.class);
-        WebElement h1 = AMUILoginPageMock.mockHidden("h1");
-        Mockito.when(driver.findElements(By.cssSelector("h1"))).thenReturn(Collections.<WebElement> singletonList(h1));
+        WebElement h1 = PageMockHelper.mockHidden("h1");
+        Mockito.when(driver.findElements(By.cssSelector("h1"))).thenReturn(Collections.singletonList(h1));
         WebElement result = FunctionalTestUtils.visibilityOfFirstElementLocatedBy(By.cssSelector("h1")).apply(driver);
         collector.checkThat(result, nullValue());
     }
@@ -207,8 +207,8 @@ public class FunctionalTestUtilsTest {
     @Test
     public void visibilityOfFirstElementLocatedBy_OneElement_Visible() {
         WebDriver driver = Mockito.mock(WebDriver.class);
-        WebElement h1 = AMUILoginPageMock.mockDisplayed("h1");
-        Mockito.when(driver.findElements(By.cssSelector("h1"))).thenReturn(Collections.<WebElement> singletonList(h1));
+        WebElement h1 = PageMockHelper.mockDisplayed("h1");
+        Mockito.when(driver.findElements(By.cssSelector("h1"))).thenReturn(Collections.singletonList(h1));
         WebElement result = FunctionalTestUtils.visibilityOfFirstElementLocatedBy(By.cssSelector("h1")).apply(driver);
         collector.checkThat(result, sameInstance(h1));
     }
@@ -216,9 +216,9 @@ public class FunctionalTestUtilsTest {
     @Test
     public void visibilityOfFirstElementLocatedBy_TwoElements_FirstVisible() {
         WebDriver driver = Mockito.mock(WebDriver.class);
-        WebElement h1a = AMUILoginPageMock.mockDisplayed("h1");
-        WebElement h1b = AMUILoginPageMock.mockHidden("h1");
-        Mockito.when(driver.findElements(By.cssSelector("h1"))).thenReturn(Arrays.asList(new WebElement[] { h1a, h1b }));
+        WebElement h1a = PageMockHelper.mockDisplayed("h1");
+        WebElement h1b = PageMockHelper.mockHidden("h1");
+        Mockito.when(driver.findElements(By.cssSelector("h1"))).thenReturn(Arrays.asList(h1a, h1b));
         WebElement result = FunctionalTestUtils.visibilityOfFirstElementLocatedBy(By.cssSelector("h1")).apply(driver);
         collector.checkThat(result, sameInstance(h1a));
     }
@@ -226,9 +226,9 @@ public class FunctionalTestUtilsTest {
     @Test
     public void visibilityOfFirstElementLocatedBy_TwoElements_SecondVisible() {
         WebDriver driver = Mockito.mock(WebDriver.class);
-        WebElement h1a = AMUILoginPageMock.mockHidden("h1");
-        WebElement h1b = AMUILoginPageMock.mockDisplayed("h1");
-        Mockito.when(driver.findElements(By.cssSelector("h1"))).thenReturn(Arrays.asList(new WebElement[] { h1a, h1b }));
+        WebElement h1a = PageMockHelper.mockHidden("h1");
+        WebElement h1b = PageMockHelper.mockDisplayed("h1");
+        Mockito.when(driver.findElements(By.cssSelector("h1"))).thenReturn(Arrays.asList(h1a, h1b));
         WebElement result = FunctionalTestUtils.visibilityOfFirstElementLocatedBy(By.cssSelector("h1")).apply(driver);
         collector.checkThat(result, sameInstance(h1b));
     }

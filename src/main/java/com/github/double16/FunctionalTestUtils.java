@@ -145,7 +145,7 @@ public class FunctionalTestUtils {
         if (locator == null) {
         	return Collections.emptyList();
         }
-    	Collection<By> locators = null;
+    	Collection<By> locators;
     	if (locator instanceof By) {
     		locators = Collections.singleton((By) locator);
     	} else if (locator.getClass().isArray()) {

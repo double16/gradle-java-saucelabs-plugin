@@ -18,10 +18,12 @@ buildscript {
         }
     }
     dependencies {
-        classpath 'org.gebish:geb-gradle:0.10.0' // for the sauceLabs configuration
-        classpath 'com.saucelabs:saucerest:1.0.22'
+        classpath('org.gebish:geb-gradle:0.10.0') { // for the sauceLabs configuration
+            exclude module: 'groovy-all'
+        }
+        classpath 'com.saucelabs:saucerest:1.0.25'
         classpath 'com.saucelabs:sauce_java_common:2.1.10'
-        classpath 'com.github.double16:gradle-java-saucelabs-plugin:0.1-SNAPSHOT' // this plugin
+        classpath 'com.github.double16:gradle-java-saucelabs-plugin:0.3-SNAPSHOT' // this plugin
         classpath "org.akhikhl.gretty:gretty:1.1.7" // for the web container
     }
 }
@@ -33,7 +35,7 @@ apply plugin: 'project-report'
 apply plugin: 'com.github.double16.java-saucelabs'
 
 dependencies {
-    functionalTestCompile 'com.github.double16:gradle-java-saucelabs-plugin:0.1-SNAPSHOT'
+    functionalTestCompile 'com.github.double16:gradle-java-saucelabs-plugin:0.3-SNAPSHOT'
 }
 
 sauceLabs {
